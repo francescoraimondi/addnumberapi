@@ -1,0 +1,31 @@
+openapi: "3.0.0"
+info:
+  version: 1.0.0
+  title: One more service
+paths:
+  /addone/{number}:
+    get:
+      summary: API adds one (+1) to the provided number
+      operationId: addNumber
+      parameters:
+        - name: number
+          in: path
+          required: true
+          description: A number to which we add one
+          schema:
+            type: integer
+      responses:
+        200:
+          description: A number that is one more than the input
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/number"
+components:
+  schemas:
+    number:
+      required:
+        - number
+      properties:
+        number:
+          type: integer

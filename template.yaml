@@ -1,0 +1,339 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Setup IaC for Flask addnumber api
+Parameters:
+  ContainerImageARN:
+    Type: String
+  HTTPSCertificate:
+    Type: String
+Resources:
+  ECSClusterVPC:
+    Type: AWS::EC2::VPC
+    Properties: 
+      CidrBlock: 10.0.0.0/16
+      Tags: 
+        - Key: Name
+          Value: ecs-cluster-vpc
+  ECSClusterPublicSubnet1:
+    Type: AWS::EC2::Subnet
+    DependsOn: ECSClusterVPC
+    Properties:
+      VpcId:
+        Ref: ECSClusterVPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: "eu-central-1a"
+      Tags:
+      - Key: Name
+        Value: ecs-cluster-public-subnet1
+  ECSClusterPublicSubnet2:
+    Type: AWS::EC2::Subnet
+    DependsOn: ECSClusterVPC
+    Properties:
+      VpcId:
+        Ref: ECSClusterVPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: "eu-central-1b"
+      Tags:
+      - Key: Name
+        Value: ecs-cluster-public-subnet2
+  ECSClusterPrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    DependsOn: ECSClusterVPC
+    Properties:
+      VpcId:
+        Ref: ECSClusterVPC
+      CidrBlock: 10.0.3.0/24
+      AvailabilityZone: "eu-central-1a"
+      Tags:
+      - Key: Name
+        Value: ecs-cluster-private-subnet1
+  ECSClusterPrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    DependsOn: ECSClusterVPC
+    Properties:
+      VpcId:
+        Ref: ECSClusterVPC
+      CidrBlock: 10.0.4.0/24
+      AvailabilityZone: "eu-central-1b"
+      Tags:
+      - Key: Name
+        Value: ecs-cluster-private-subnet2
+  ECSClusterIGW:
+    Type: AWS::EC2::InternetGateway
+    DependsOn: ECSClusterVPC
+    Properties:
+      Tags:
+      - Key: Name
+        Value: ecs-cluster-igw
+  ECSClusterIGWVPCAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    DependsOn: ECSClusterIGW
+    Properties:
+      VpcId:
+        Ref: ECSClusterVPC
+      InternetGatewayId:
+        Ref: ECSClusterIGW
+  ECSNATGWEIP1:
+    DependsOn: ECSClusterIGWVPCAttachment
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+  ECSClusterNATGW1:
+    Type: AWS::EC2::NatGateway
+    DependsOn: ECSClusterPublicSubnet1
+    Properties:
+      AllocationId:
+         Fn::GetAtt:
+         - ECSNATGWEIP1
+         - AllocationId
+      SubnetId:
+         Ref: ECSClusterPublicSubnet1
+      Tags:
+      - Key: Name
+        Value: ecs-cluster-natgw1
+  ECSNATGWEIP2:
+    DependsOn: ECSClusterIGWVPCAttachment
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+  ECSClusterNATGW2:
+    Type: AWS::EC2::NatGateway
+    DependsOn: ECSClusterPublicSubnet2
+    Properties:
+      AllocationId:
+         Fn::GetAtt:
+         - ECSNATGWEIP2
+         - AllocationId
+      SubnetId:
+         Ref: ECSClusterPublicSubnet2
+      Tags:
+      - Key: Name
+        Value: ecs-cluster-natgw2
+  ECSClusterPublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    DependsOn: ECSClusterVPC
+    Properties:
+      VpcId:  
+        Ref: ECSClusterVPC
+      Tags:
+      - Key: Name
+        Value: ecs-cluster-public-rt  
+  ECSClusterPrivateRouteTable1:
+    Type: AWS::EC2::RouteTable
+    DependsOn: ECSClusterVPC
+    Properties:
+      VpcId:  
+        Ref: ECSClusterVPC
+      Tags:
+      - Key: Name
+        Value: ecs-cluster-private-rt1
+  ECSClusterPrivateRouteTable2:
+    Type: AWS::EC2::RouteTable
+    DependsOn: ECSClusterVPC
+    Properties:
+      VpcId:  
+        Ref: ECSClusterVPC
+      Tags:
+      - Key: Name
+        Value: ecs-cluster-private-rt2
+  IGWRoute:
+    Type: AWS::EC2::Route
+    DependsOn: ECSClusterIGW
+    Properties:
+      RouteTableId:
+         Ref: ECSClusterPublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId:
+         Ref: ECSClusterIGW
+  NATGW1Route:
+    Type: AWS::EC2::Route
+    DependsOn: ECSClusterPrivateRouteTable1
+    Properties:
+      RouteTableId:
+         Ref: ECSClusterPrivateRouteTable1
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId:
+         Ref: ECSClusterNATGW1
+  NATGW2Route:
+    Type: AWS::EC2::Route
+    DependsOn: ECSClusterPrivateRouteTable2
+    Properties:
+      RouteTableId:
+         Ref: ECSClusterPrivateRouteTable2
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId:
+         Ref: ECSClusterNATGW2
+  PublicSubnet1RTAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId:
+        Ref: ECSClusterPublicSubnet1
+      RouteTableId:
+        Ref: ECSClusterPublicRouteTable
+  PublicSubnet2RTAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId:
+        Ref: ECSClusterPublicSubnet2
+      RouteTableId:
+        Ref: ECSClusterPublicRouteTable
+  PrivateSubnet1RTAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId:
+        Ref: ECSClusterPrivateSubnet1
+      RouteTableId:
+        Ref: ECSClusterPrivateRouteTable1
+  PrivateSubnet2RTAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId:
+        Ref: ECSClusterPrivateSubnet2
+      RouteTableId:
+        Ref: ECSClusterPrivateRouteTable2
+  ECSFARGATETaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties: 
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Allow"
+            Principal:
+              Service:
+                - "ecs-tasks.amazonaws.com" 
+            Action: 
+              - "sts:AssumeRole"
+      ManagedPolicyArns: 
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+      RoleName: ECSTaskRole
+  ECSClusterTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    DependsOn: ECSFARGATETaskExecutionRole
+    Properties: 
+      RequiresCompatibilities:
+        - "EC2"
+        - "FARGATE"
+      NetworkMode: awsvpc
+      ExecutionRoleArn: !GetAtt ECSFARGATETaskExecutionRole.Arn
+      Cpu: 256
+      Memory: "512"
+      ContainerDefinitions: 
+      - 
+        Name: "flask-addnumber-openapi"
+        Image: !Ref 'ContainerImageARN'
+        PortMappings: 
+          - 
+            ContainerPort: "80"
+            HostPort: "80"
+      Tags: 
+        - Key: Name
+          Value: addnumber-task
+  ECSClusterTG:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    DependsOn: ECSClusterVPC
+    Properties: 
+      HealthCheckEnabled: true
+      HealthCheckPort: '80'
+      HealthCheckProtocol: HTTP
+      Name: ecs-cluster-target-group
+      Port: '80'
+      Protocol: HTTP
+      TargetType: ip
+      VpcId: 
+        Ref: ECSClusterVPC
+  ECSClusterLBSG:
+    Type: AWS::EC2::SecurityGroup
+    DependsOn: ECSClusterVPC
+    Properties:
+        GroupDescription: ECS Cluster Load Balancer Security Group
+        VpcId:
+          Ref: ECSClusterVPC
+        SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+  ECSClusterLB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    DependsOn:
+      - ECSClusterLBSG
+      - ECSClusterTG
+      - ECSClusterPublicSubnet1
+      - ECSClusterPublicSubnet2
+    Properties: 
+      IpAddressType: ipv4
+      Name: ecs-cluster-load-balancer
+      Scheme: internet-facing
+      SecurityGroups: 
+        - Ref: ECSClusterLBSG
+      Subnets: 
+        - Ref: ECSClusterPublicSubnet1
+        - Ref: ECSClusterPublicSubnet2
+      Type: application
+  ECSClusterLBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    DependsOn:
+      - ECSClusterLB
+      - ECSClusterTG
+    Properties:
+      Certificates: 
+      - CertificateArn: !Ref HTTPSCertificate
+      LoadBalancerArn: !Ref ECSClusterLB
+      Port: 443
+      Protocol: HTTPS
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ECSClusterTG
+  ECSCluster:
+    Type: AWS::ECS::Cluster
+    DependsOn: ECSClusterVPC
+    Properties: 
+      ClusterName: ecs-cluster
+  ECSClusterContainerSG:
+    Type: AWS::EC2::SecurityGroup
+    DependsOn: ECSClusterLBSG
+    Properties:
+      GroupDescription: ECS Cluster Container Security Group
+      VpcId:
+        Ref: ECSClusterVPC
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 80
+        ToPort: 80
+        SourceSecurityGroupId: !GetAtt ECSClusterLBSG.GroupId
+  ECSService:
+    Type: AWS::ECS::Service
+    DependsOn:
+    - ECSCluster
+    - ECSClusterLBListener
+    - ECSClusterContainerSG
+    - ECSClusterTaskDefinition
+    - ECSClusterTG
+    - ECSClusterPrivateSubnet1
+    - ECSClusterPrivateSubnet2
+    Properties:
+      TaskDefinition:
+        Ref: ECSClusterTaskDefinition
+      DesiredCount: 1
+      LaunchType: FARGATE
+      LoadBalancers:
+      - TargetGroupArn:
+          Ref: ECSClusterTG
+        ContainerPort: 80
+        ContainerName: flask-addnumber-openapi
+      Cluster:
+        Ref: ECSCluster
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: DISABLED
+          Subnets:
+          - Ref: ECSClusterPrivateSubnet1
+          - Ref: ECSClusterPrivateSubnet2
+          SecurityGroups:
+            - !Ref ECSClusterContainerSG
+Outputs:
+  LoadBalancerPublicDNS:
+    Description: Public DNS of the Load Balancer
+    Export:
+      Name: LoadBalancerPublicDNS
+    Value: !GetAtt ECSClusterLB.DNSName
